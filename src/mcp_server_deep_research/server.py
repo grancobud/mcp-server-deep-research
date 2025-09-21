@@ -214,8 +214,49 @@ async def main():
     @server.list_tools()
     async def handle_list_tools() -> list[Tool]:
         logger.debug("Handling list_tools request")
-        # We're not exposing any tools since we'll be using Claude's built-in web search
-        return []
+        return [
+            Tool(
+                name="deep_research",
+                description="Conduct deep research on a topic using available web search tools",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "The research question to investigate"
+                        }
+                    },
+                    "required": ["query"]
+                }
+            )
+        ]
+
+    @server.call_tool()
+    async def handle_call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
+        logger.debug(f"Handling call_tool request for {name} with args {arguments}")
+        if name != "deep_research":
+            raise ValueError(f"Unknown tool: {name}")
+
+        if "query" not in arguments:
+            raise ValueError("Missing required argument: query")
+
+        research_question = arguments["query"]
+        prompt = PROMPT_TEMPLATE.format(research_question=research_question)
+
+        # Store the research question
+        research_processor.update_research_data("question", research_question)
+        research_processor.add_note(
+            f"Research initiated on question: {research_question}"
+        )
+
+        # Modify the prompt to use available tools
+        modified_prompt = prompt.replace(
+            "Search for relevant information using web search.",
+            "Search for relevant information using the available web search tools (duckduckgo-search, information-retrieval-server)."
+        )
+
+        logger.debug(f"Generated research prompt for query: {research_question}")
+        return [TextContent(type="text", text=modified_prompt)]
 
     async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
         logger.debug("Server running with stdio transport")
